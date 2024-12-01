@@ -28,5 +28,5 @@ transpose (first : remaining) =
 main = do
   contents <- getContents
   print $
-    let [first, second] = map sort $ transpose $ parse contents
-     in foldl1 (+) $ map (\(first, second) -> abs (first - second)) $ zip first second
+    let [first, second] = transpose $ parse contents
+     in foldl1 (+) $ map (\value -> value * length (filter (== value) second)) first
