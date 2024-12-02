@@ -27,6 +27,17 @@ isValid list =
       (numPos, numNeg) = countSigns diffs
    in (numPos == 0 || numNeg == 0) && all ((\val -> val >= 1 && val <= 3) . abs) diffs
 
+withoutIdx :: Int -> [a] -> [a]
+withoutIdx _ [] = []
+withoutIdx 0 (first : remaining) = remaining
+withoutIdx idx (first : remaining) = first : withoutIdx (idx - 1) remaining
+
+allPossibilities :: [a] -> [[a]]
+allPossibilities input = input : map (flip withoutIdx input) [0 .. (length input - 1)]
+
+isValidForPart2 :: [Int] -> Bool
+isValidForPart2 input = any isValid $ allPossibilities input
+
 main = do
   contents <- getContents
-  print $ length $ filter isValid $ parse contents
+  print $ length $ filter isValidForPart2 $ parse contents
