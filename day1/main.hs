@@ -21,12 +21,10 @@ parse input = map (map read . split isSpace) $ split (== '\n') input
 
 transpose :: [[a]] -> [[a]]
 transpose [first] = map (: []) first
-transpose (first : remaining) =
-  let transposeRemaining = transpose remaining
-   in map (\values -> let (first, remaining) = values in first : remaining) (zip first transposeRemaining)
+transpose (first : remaining) = zipWith (:) first $ transpose remaining
 
 main = do
   contents <- getContents
   print $
     let [first, second] = transpose $ parse contents
-     in foldl1 (+) $ map (\value -> value * length (filter (== value) second)) first
+     in sum $ map (\value -> value * length (filter (== value) second)) first
