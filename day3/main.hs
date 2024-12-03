@@ -53,10 +53,26 @@ unwrapOr :: a -> Maybe a -> a
 unwrapOr _ (Just val) = val
 unwrapOr val _ = val
 
+skipUntilDo :: String -> String
+skipUntilDo input =
+  let processed_input = skipWhile (/= 'd') input
+   in if null processed_input
+        then ""
+        else
+          if startMatches "do()" processed_input
+            then skip 1 processed_input
+            else skipUntilDo $ skip 1 processed_input
+
 process :: String -> Int
 process value =
-  let processed_value = skipWhile (/= 'm') value
-   in if null processed_value then 0 else unwrapOr 0 (processSingleInstruction processed_value) + process (skip 1 processed_value)
+  let processed_value = skipWhile (\val -> val /= 'm' && val /= 'd') value
+   in if null processed_value
+        then 0
+        else
+          if startMatches "don't()" processed_value
+            then process $ skipUntilDo processed_value
+            else
+              unwrapOr 0 (processSingleInstruction processed_value) + process (skip 1 processed_value)
 
 main = do
   contents <- getContents
