@@ -47,7 +47,7 @@ findEndPoints row col input =
 
 findScore :: Int -> Int -> [[Int]] -> Int
 findScore row col input =
-  let endpoints = Set.fromList $ findEndPoints row col input
+  let endpoints = findEndPoints row col input
    in length endpoints
 
 main = do
