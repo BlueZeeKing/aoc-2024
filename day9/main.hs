@@ -1,4 +1,6 @@
+import Data.Binary.Get (remaining)
 import Debug.Trace
+import Distribution.Utils.Generic (fstOf3, sndOf3)
 import Distribution.Utils.String (trim)
 
 charToInt :: Char -> Int
@@ -17,28 +19,49 @@ enumerate :: [a] -> [(Int, a)]
 enumerate [] = []
 enumerate (first : remaining) = (0, first) : map (\(idx, val) -> (idx + 1, val)) (enumerate remaining)
 
+flatten :: [[a]] -> [a]
+flatten [[]] = []
+flatten ([] : (next : innerRemaining) : remaining) = next : flatten (innerRemaining : remaining)
+flatten ((next : innerRemaining) : remaining) = next : flatten (innerRemaining : remaining)
+
 parse :: String -> [(Int, Int, Int)]
 parse [last] = [(0, charToInt last, 0)]
 parse (amountFull : amountEmpty : remaining) = (0, charToInt amountFull, charToInt amountEmpty) : map (\(idx, full, empty) -> (idx + 1, full, empty)) (parse remaining)
 
-fillEmptySpace :: [(Int, Int, Int)] -> Int -> ([Int], [(Int, Int, Int)])
-fillEmptySpace [] _ = ([], [])
-fillEmptySpace files 0 = ([], files)
-fillEmptySpace files amountToFill =
-  let (currentIdx, amountFull, _) = last files
-   in if amountFull >= amountToFill
-        then (replicate amountToFill currentIdx, init files ++ if amountFull == amountToFill then [] else [(currentIdx, amountFull - amountToFill, 0)])
-        else
-          let (nextIds, nextFiles) = fillEmptySpace (init files) (amountToFill - amountFull)
-           in (replicate amountFull currentIdx ++ nextIds, nextFiles)
+insertFile :: Int -> Int -> [(Int, Int, Int)] -> Maybe [(Int, Int, Int)]
+insertFile idx size [] = Nothing
+insertFile currentIndex amountFull ((testIdx, testFull, testEmpty) : remaining) =
+  if testEmpty >= amountFull
+    then Just $ (testIdx, testFull, 0) : (currentIndex, amountFull, testEmpty - amountFull) : remaining
+    else ((testIdx, testFull, testEmpty) :) <$> insertFile currentIndex amountFull remaining
 
-calculateDiskMap :: [(Int, Int, Int)] -> [Int]
-calculateDiskMap [] = []
-calculateDiskMap ((currentIdx, amountFull, amountEmpty) : remaining) =
-  let firstPart = replicate amountFull currentIdx
-      (fillPart, newRemaining) = fillEmptySpace remaining amountEmpty
-   in firstPart ++ fillPart ++ calculateDiskMap newRemaining
+skipUntilAndIncluding :: (a -> Bool) -> [a] -> [a]
+skipUntilAndIncluding _ [] = []
+skipUntilAndIncluding shouldSkip (val : remaining) = if shouldSkip val then remaining else skipUntilAndIncluding shouldSkip remaining
+
+splitAroundFile :: Int -> [(Int, Int, Int)] -> ([(Int, Int, Int)], (Int, Int, Int), [(Int, Int, Int)])
+splitAroundFile idx input = (takeWhile ((/= idx) . fstOf3) input, head $ filter ((== idx) . fstOf3) input, skipUntilAndIncluding ((== idx) . fstOf3) input)
+
+placeFile :: Int -> [(Int, Int, Int)] -> [(Int, Int, Int)]
+placeFile idx input =
+  let (start, (_, size, empty), end) = splitAroundFile idx input
+   in case insertFile idx size start of
+        Nothing -> input
+        Just newStart ->
+          let startNewStart = init newStart
+              (lastIdx, lastSize, lastEmpty) = last newStart
+           in startNewStart ++ [(lastIdx, lastSize, lastEmpty + size + empty)] ++ end
+
+calculateDiskMap :: [(Int, Int, Int)] -> [(Int, Int, Int)]
+calculateDiskMap input =
+  let range = [1 .. length input - 1]
+   in foldr placeFile input range
+
+calculateCheckSum :: [(Int, Int, Int)] -> Int -> Int
+calculateCheckSum [] _ = 0
+calculateCheckSum ((idx, size, empty) : remaining) startingPos = sum (map (* idx) $ take size [startingPos ..]) + calculateCheckSum remaining (startingPos + size + empty)
 
 main = do
   contents <- getContents
-  print $ sum $ map (uncurry (*)) $ enumerate $ calculateDiskMap $ parse $ trim contents
+  let values = calculateDiskMap $ parse $ trim contents
+   in print $ calculateCheckSum values 0
