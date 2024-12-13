@@ -26,7 +26,11 @@ findPrice (a : b : target : _) =
   let parse = map (read . (\val -> if head val == '+' then skip 1 val else val) . skip 1 . trimStartSpaces) . split (== ',') . skip 10
       [aX, aY] :: [Int] = parse a
       [bX, bY] :: [Int] = parse b
-      [targetX, targetY] :: [Int] = map (read . skip 2 . trimStartSpaces) $ split (== ',') $ skip 7 target
+      [smallTargetX, smallTargetY] :: [Int] = map (read . skip 2 . trimStartSpaces) $ split (== ',') $ skip 7 target
+
+      targetX = 10000000000000 + smallTargetX
+      targetY = 10000000000000 + smallTargetY
+
       c2Num = targetY * aX - aY * targetX
       c2Den = bY * aX - bX * aY
       c1Num = targetX * c2Den - c2Num * bX
