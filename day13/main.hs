@@ -1,47 +1,3 @@
-import Data.Bifunctor
-import Data.List (find, sortBy)
-import Data.Maybe
-import Debug.Trace
-
--- Taken from rosettacode, https://rosettacode.org/wiki/Reduced_row_echelon_form#Haskell
-rref :: (Fractional a, Eq a) => [[a]] -> [[a]]
-rref m = f m 0 [0 .. rows - 1]
-  where
-    rows = length m
-    cols = length $ head m
-
-    f m _ [] = m
-    f m lead (r : rs)
-      | isNothing indices = m
-      | otherwise = f m' (lead' + 1) rs
-      where
-        indices = find p l
-        p (col, row) = m !! row !! col /= 0
-        l =
-          [ (col, row)
-            | col <- [lead .. cols - 1],
-              row <- [r .. rows - 1]
-          ]
-
-        Just (lead', i) = indices
-        newRow = map (/ m !! i !! lead') $ m !! i
-
-        m' =
-          zipWith g [0 ..] $
-            replace r newRow $
-              replace i (m !! r) m
-        g n row
-          | n == r = row
-          | otherwise = zipWith h newRow row
-          where
-            h = subtract . (* row !! lead')
-
-replace :: Int -> a -> [a] -> [a]
-{- Replaces the element at the given index. -}
-replace n e l = a ++ e : b
-  where
-    (a, _ : b) = splitAt n l
-
 skipWhile :: (a -> Bool) -> [a] -> [a]
 skipWhile _ [] = []
 skipWhile predicate (start : rest) =
@@ -71,11 +27,12 @@ findPrice (a : b : target : _) =
       [aX, aY] :: [Int] = parse a
       [bX, bY] :: [Int] = parse b
       [targetX, targetY] :: [Int] = map (read . skip 2 . trimStartSpaces) $ split (== ',') $ skip 7 target
-      matrix = rref $ map (map fromIntegral) [[aX, bX, targetX], [aY, bY, targetY]]
-      aPressed = round $ last $ head matrix
-      bPressed = round $ last $ last matrix
-   in if aPressed * aX + bPressed * bX == targetX && aPressed * aY + bPressed * bY == targetY
-        then aPressed * 3 + bPressed
+      c2Num = targetY * aX - aY * targetX
+      c2Den = bY * aX - bX * aY
+      c1Num = targetX * c2Den - c2Num * bX
+      c1Den = aX * c2Den
+   in if c2Num `mod` c2Den == 0 && c1Num `mod` c1Den == 0
+        then c1Num `div` c1Den * 3 + c2Num `div` c2Den
         else 0
 findPrice _ = 0
 
