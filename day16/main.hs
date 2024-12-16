@@ -3,7 +3,8 @@
 {-# HLINT ignore "Use lambda-case" #-}
 import Data.List (minimumBy)
 import qualified Data.Map as Map
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, mapMaybe)
+import qualified Data.Set as Set
 import Debug.Trace (trace)
 
 enumerateInner :: Int -> [a] -> [(Int, a)]
@@ -37,42 +38,49 @@ getOtherDirections South = [West, East]
 getOtherDirections East = [North, South]
 getOtherDirections West = [North, South]
 
-getOtherNodes :: Map.Map (Int, Int, Direction) (Maybe Int) -> (Int, Int, Direction) -> [((Int, Int, Direction), Int)]
+getOtherNodes :: Map.Map (Int, Int, Direction) b -> (Int, Int, Direction) -> [((Int, Int, Direction), Int)]
 getOtherNodes nodes (rowIdx, colIdx, dir) =
   let otherDirections = getOtherDirections dir
       (nextRowIdx, nextColIdx) = applyDirection dir rowIdx colIdx
       possibleNodes = ((nextRowIdx, nextColIdx, dir), 1) : map (\dir -> ((rowIdx, colIdx, dir), 1000)) otherDirections
    in filter ((`Map.member` nodes) . fst) possibleNodes
 
-dijkstra :: Map.Map (Int, Int, Direction) (Maybe Int) -> Int -> Int -> Int
+dijkstra :: Map.Map (Int, Int, Direction) (Maybe Int, [(Int, Int, Direction)]) -> Int -> Int -> [((Int, Int, Direction), (Maybe Int, [(Int, Int, Direction)]))]
 dijkstra unvisited endRow endCol =
-  let ((nextVisitedRow, nextVisitedCol, nextVisitedDir), cost) =
+  let ((nextVisitedRow, nextVisitedCol, nextVisitedDir), (cost, route)) =
         minimumBy
-          ( \(_, fst) (_, snd) -> case (fst, snd) of
+          ( \(_, (fst, _)) (_, (snd, _)) -> case (fst, snd) of
               (Just fst, Just snd) -> fst `compare` snd
               (Just _, _) -> LT
               (_, Just _) -> GT
               (_, _) -> EQ
           )
           $ Map.toList unvisited
-   in if nextVisitedRow == endRow && nextVisitedCol == endCol
-        then fromJust cost
-        else
-          let adjacentNodes = getOtherNodes unvisited (nextVisitedRow, nextVisitedCol, nextVisitedDir)
-              nextUnvisted =
-                foldr
-                  ( \(item, additionalCost) acc ->
-                      Map.adjust
-                        ( \oldCost -> case oldCost of
-                            Just val -> Just (min val (fromJust cost + additionalCost))
-                            Nothing -> Just (fromJust cost + additionalCost)
-                        )
-                        item
-                        acc
-                  )
-                  (Map.delete (nextVisitedRow, nextVisitedCol, nextVisitedDir) unvisited)
-                  adjacentNodes
-           in dijkstra nextUnvisted endRow endCol
+      adjacentNodes = getOtherNodes unvisited (nextVisitedRow, nextVisitedCol, nextVisitedDir)
+      nextUnvisted =
+        foldr
+          ( \(item, additionalCost) acc ->
+              Map.adjust
+                ( \(oldCost, route) -> case oldCost of
+                    Just val ->
+                      let newCost = fromJust cost + additionalCost
+                       in case newCost `compare` val of
+                            LT -> (Just newCost, [(nextVisitedRow, nextVisitedCol, nextVisitedDir)])
+                            GT -> (Just val, route)
+                            EQ -> (Just val, (nextVisitedRow, nextVisitedCol, nextVisitedDir) : route)
+                    Nothing -> (Just (fromJust cost + additionalCost), [(nextVisitedRow, nextVisitedCol, nextVisitedDir)])
+                )
+                item
+                acc
+          )
+          (Map.delete (nextVisitedRow, nextVisitedCol, nextVisitedDir) unvisited)
+          adjacentNodes
+   in if null nextUnvisted then [] else ((nextVisitedRow, nextVisitedCol, nextVisitedDir), (cost, route)) : dijkstra nextUnvisted endRow endCol
+
+traceGraph :: Map.Map (Int, Int, Direction) (Maybe Int, [(Int, Int, Direction)]) -> Int -> Int -> Direction -> [(Int, Int)]
+traceGraph graph currentRow currentCol direction =
+  let (_, nextDirections) = graph Map.! (currentRow, currentCol, direction)
+   in (currentCol, currentRow) : flatten (map (\(row, col, dir) -> traceGraph graph row col dir) nextDirections)
 
 main = do
   contents <- getContents
@@ -86,5 +94,12 @@ main = do
       (startRow, startCol) = head $ map (\(a, b, _) -> (a, b)) $ filter ((== 'S') . trd) cells
       (endRow, endCol) = head $ map (\(a, b, _) -> (a, b)) $ filter ((== 'E') . trd) cells
 
-      unvisitedList = Map.adjust (const (Just 0)) (startRow, startCol, East) $ Map.fromList $ map (,Nothing) nodes
-  print $ dijkstra unvisitedList endRow endCol
+      unvisitedList = Map.adjust (const (Just 0, [])) (startRow, startCol, East) $ Map.fromList $ map (,(Nothing, [])) nodes
+
+      finalGraph = Map.fromList $ dijkstra unvisitedList endRow endCol
+
+      possibleFinalEndPoints = filter (`Map.member` finalGraph) $ map (endRow,endCol,) [North, East, South, West]
+      finalScore = minimum $ mapMaybe (fst . (finalGraph Map.!)) possibleFinalEndPoints
+      finalEndPoints = filter ((Just finalScore ==) . fst . (finalGraph Map.!)) possibleFinalEndPoints
+      routes = foldr (\(row, col, dir) acc -> traceGraph finalGraph row col dir ++ acc) [] finalEndPoints
+  print $ length $ Set.fromList routes
