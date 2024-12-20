@@ -29,7 +29,7 @@ findPath values row col
   | otherwise = [(row, col)]
 
 canSkip :: Int -> Int -> Int -> Int -> Bool
-canSkip fstRow fstCol sndRow sndCol = abs (fstRow - sndRow) + abs (fstCol - sndCol) == 2
+canSkip fstRow fstCol sndRow sndCol = abs (fstRow - sndRow) + abs (fstCol - sndCol) <= 20
 
 combinationsOf2 :: [a] -> [(a, a)]
 combinationsOf2 [] = []
