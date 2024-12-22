@@ -1,96 +1,112 @@
+import Control.Concurrent (forkIO)
+import Control.Concurrent.MVar
+import Control.Monad
 import qualified Data.Map as Map
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, mapMaybe)
+import Debug.Trace (trace)
 
 data DirectionButton = A | Left | Right | Up | Down
   deriving (Ord, Eq, Show)
 
-data State = State
-  { keypad :: Int,
-    fstDir :: DirectionButton,
-    sndDir :: DirectionButton
-  }
-  deriving (Ord, Eq, Show)
+buttonToCoord :: DirectionButton -> (Int, Int)
+buttonToCoord Main.A = (2, 0)
+buttonToCoord Main.Up = (1, 0)
+buttonToCoord Main.Left = (0, 1)
+buttonToCoord Main.Down = (1, 1)
+buttonToCoord Main.Right = (2, 1)
 
-getSurroundingDirections :: DirectionButton -> [DirectionButton]
-getSurroundingDirections Main.A = [Main.Up, Main.Right]
-getSurroundingDirections Main.Left = [Main.Up, Main.Down]
-getSurroundingDirections Main.Right = [Main.A, Main.Down]
-getSurroundingDirections Main.Up = [Main.A, Main.Down]
-getSurroundingDirections Main.Down = [Main.Up, Main.Left, Main.Right]
+keypadToCoord :: Int -> (Int, Int)
+keypadToCoord 7 = (0, 0)
+keypadToCoord 8 = (1, 0)
+keypadToCoord 9 = (2, 0)
+keypadToCoord 4 = (0, 1)
+keypadToCoord 5 = (1, 1)
+keypadToCoord 6 = (2, 1)
+keypadToCoord 1 = (0, 2)
+keypadToCoord 2 = (1, 2)
+keypadToCoord 3 = (2, 2)
+keypadToCoord 0 = (1, 3)
+keypadToCoord 10 = (2, 3)
 
--- up down left right
-keypadDirectionMap :: Int -> (Maybe Int, Maybe Int, Maybe Int, Maybe Int)
-keypadDirectionMap 0 = (Just 2, Nothing, Nothing, Just 10)
-keypadDirectionMap 1 = (Just 4, Nothing, Nothing, Just 2)
-keypadDirectionMap 2 = (Just 5, Just 0, Just 1, Just 3)
-keypadDirectionMap 3 = (Just 6, Just 10, Just 2, Nothing)
-keypadDirectionMap 4 = (Just 7, Just 1, Nothing, Just 5)
-keypadDirectionMap 5 = (Just 8, Just 2, Just 4, Just 6)
-keypadDirectionMap 6 = (Just 9, Just 3, Just 5, Nothing)
-keypadDirectionMap 7 = (Nothing, Just 4, Nothing, Just 8)
-keypadDirectionMap 8 = (Nothing, Just 5, Just 7, Just 9)
-keypadDirectionMap 9 = (Nothing, Just 6, Just 8, Nothing)
-keypadDirectionMap 10 = (Just 3, Nothing, Just 0, Nothing)
+pathOnKeypad :: Int -> Int -> [DirectionButton]
+pathOnKeypad start target
+  | startX == targetX || startY == targetY = movementY ++ movementX
+  | startY == 3 && targetX == 0 = movementY ++ movementX
+  | targetY == 3 && startX == 0 = movementX ++ movementY
+  | targetX < startX = movementX ++ movementY -- I don't know why this works
+  | otherwise = movementY ++ movementX
+  where
+    (startX, startY) = keypadToCoord start
+    (targetX, targetY) = keypadToCoord target
+    movementY = replicate (abs (startY - targetY)) (if startY < targetY then Main.Down else Main.Up)
+    movementX = replicate (abs (startX - targetX)) (if startX < targetX then Main.Right else Main.Left)
 
-getKeypadFromMap :: (Maybe Int, Maybe Int, Maybe Int, Maybe Int) -> DirectionButton -> Maybe Int
-getKeypadFromMap (up, down, left, right) Main.Up = up
-getKeypadFromMap (up, down, left, right) Main.Down = down
-getKeypadFromMap (up, down, left, right) Main.Left = left
-getKeypadFromMap (up, down, left, right) Main.Right = right
+pathOnDirection :: DirectionButton -> DirectionButton -> [DirectionButton]
+pathOnDirection start target
+  | startX == targetX || startY == targetY = movementY ++ movementX
+  | startY == 0 && targetX == 0 = movementY ++ movementX
+  | targetY == 0 && startX == 0 = movementX ++ movementY
+  | targetX < startX = movementX ++ movementY
+  | otherwise = movementY ++ movementX
+  where
+    (startX, startY) = buttonToCoord start
+    (targetX, targetY) = buttonToCoord target
+    movementY = replicate (abs (startY - targetY)) (if startY < targetY then Main.Down else Main.Up)
+    movementX = replicate (abs (startX - targetX)) (if startX < targetX then Main.Right else Main.Left)
 
--- up down left right
-directionMap :: DirectionButton -> (Maybe DirectionButton, Maybe DirectionButton, Maybe DirectionButton, Maybe DirectionButton)
-directionMap Main.A = (Nothing, Just Main.Right, Just Main.Up, Nothing)
-directionMap Main.Up = (Nothing, Just Main.Down, Nothing, Just Main.A)
-directionMap Main.Down = (Just Main.Up, Nothing, Just Main.Left, Just Main.Right)
-directionMap Main.Left = (Nothing, Nothing, Nothing, Just Main.Down)
-directionMap Main.Right = (Just Main.A, Nothing, Just Main.Down, Nothing)
+findInitialPath :: [Int] -> [DirectionButton]
+findInitialPath [val] = []
+findInitialPath (fstKey : sndKey : remaining) =
+  let currentPath = pathOnKeypad fstKey sndKey
+      nextPath = findInitialPath (sndKey : remaining)
+   in currentPath ++ [Main.A] ++ nextPath
 
-getDirectionFromMap :: (Maybe DirectionButton, Maybe DirectionButton, Maybe DirectionButton, Maybe DirectionButton) -> DirectionButton -> Maybe DirectionButton
-getDirectionFromMap (up, down, left, right) Main.Up = up
-getDirectionFromMap (up, down, left, right) Main.Down = down
-getDirectionFromMap (up, down, left, right) Main.Left = left
-getDirectionFromMap (up, down, left, right) Main.Right = right
+pairs :: [a] -> [(a, a)]
+pairs (fst : snd : remaining) = (fst, snd) : pairs (snd : remaining)
+pairs _ = []
 
-pressA :: State -> Maybe State
-pressA State {keypad, fstDir, sndDir}
-  | fstDir == Main.A && sndDir == Main.A = Nothing
-  | fstDir == Main.A = case getKeypadFromMap (keypadDirectionMap keypad) sndDir of
-      Just val -> Just State {keypad = val, fstDir = fstDir, sndDir = sndDir}
-      Nothing -> Nothing
-  | otherwise = case getDirectionFromMap (directionMap sndDir) fstDir of
-      Just val -> Just State {keypad = keypad, fstDir = fstDir, sndDir = val}
-      Nothing -> Nothing
-
-getSurroundingStates :: State -> [State]
-getSurroundingStates State {keypad, fstDir, sndDir} =
-  catMaybes $
-    pressA State {keypad = keypad, fstDir = fstDir, sndDir = sndDir}
-      : map
-        ( fmap
-            ( \newFstDir ->
-                State {keypad = keypad, fstDir = newFstDir, sndDir = sndDir}
-            )
-            . getDirectionFromMap (directionMap fstDir)
-        )
-        [Main.Up, Main.Down, Main.Left, Main.Right]
-
-bfs :: Map.Map State Int -> State -> [State] -> Int
-bfs visited target (nextState : remaining)
-  | target == nextState = visited Map.! target
+numberOfInstructions :: Map.Map (Int, DirectionButton, DirectionButton) Int -> Int -> DirectionButton -> DirectionButton -> (Int, Map.Map (Int, DirectionButton, DirectionButton) Int)
+numberOfInstructions cache 0 _ _ = (1, cache)
+numberOfInstructions cache depth fstButton sndButton
+  | Just result <- Map.lookup (depth, fstButton, sndButton) cache = (result, cache)
   | otherwise =
-      let surrounding = filter (`Map.notMember` visited) $ getSurroundingStates nextState
-          currentCost = visited Map.! nextState
-       in bfs (foldr (`Map.insert` (currentCost + 1)) visited surrounding) target (remaining ++ surrounding)
+      let path = Main.A : pathOnDirection fstButton sndButton ++ [Main.A]
+          (result, newCache) =
+            foldr
+              ( \(fstButton, sndButton) (acc, cache) ->
+                  let (result, newCache) = numberOfInstructions cache (depth - 1) fstButton sndButton
+                   in (acc + result, newCache)
+              )
+              (0, cache)
+              $ pairs path
+       in (result, Map.insert (depth, fstButton, sndButton) result newCache)
 
-findLength :: [State] -> Int
-findLength (initial : target : remaining) = bfs (Map.insert initial 0 Map.empty) target [initial] + 1 + findLength (target : remaining)
-findLength _ = 0
+performRobotPasses :: Int -> [DirectionButton] -> Int
+performRobotPasses numPasses path =
+  fst
+    $ foldr
+      ( \(fstButton, sndButton) (acc, cache) ->
+          let (result, newCache) = numberOfInstructions cache numPasses fstButton sndButton
+           in (acc + result, newCache)
+      )
+      (0, Map.empty)
+    $ pairs (Main.A : path)
 
 main = do
   contents <- getContents
   let codes = lines contents
       numericPart :: [Int] = map (read . init) codes
-      initialState = State {keypad = 10, fstDir = Main.A, sndDir = Main.A}
-      complexity = zipWith (*) numericPart $ map (findLength . (initialState :) . map (\value -> State {keypad = if value == 'A' then 10 else read [value], fstDir = Main.A, sndDir = Main.A})) codes
-  print $ sum complexity
+      parsedCodes = map (map (\value -> if value == 'A' then 10 else read [value])) codes
+  vars <- replicateM (length parsedCodes) newEmptyMVar
+  mapM_
+    ( \(code, numericPart, var) ->
+        forkIO
+          ( do
+              let initialPath = findInitialPath (10 : code)
+                  numPresses = performRobotPasses 25 initialPath
+              putMVar var (numPresses * numericPart)
+          )
+    )
+    $ zip3 parsedCodes numericPart vars
+  result <- mapM takeMVar vars
+  print $ sum result
