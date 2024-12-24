@@ -53,21 +53,33 @@ main = do
           )
           initialValsRaw
       gates =
-        Map.fromList $
-          map
-            ( \gate ->
-                let [fstVar, operator, sndVar, "->", outputVar] = words gate
-                 in ( outputVar,
-                      ( fstVar,
-                        case operator of
-                          "AND" -> And
-                          "OR" -> Or
-                          "XOR" -> Xor,
-                        sndVar
-                      )
+        map
+          ( \gate ->
+              let [fstVar, operator, sndVar, "->", outputVar] = words gate
+               in ( outputVar,
+                    ( fstVar,
+                      case operator of
+                        "AND" -> And
+                        "OR" -> Or
+                        "XOR" -> Xor,
+                      sndVar
                     )
-            )
-            rawGates
-      zs = sort $ filter ((== 'z') . head) $ map fst $ Map.toList gates
-      vals = calculateValues gates (Map.fromList initials) zs
-  print $ sum $ map ((2 ^) . fst) $ filter snd $ enumerate $ map (vals Map.!) zs
+                  )
+          )
+          rawGates
+      zs = sort $ filter ((== 'z') . head) $ map fst gates
+  putStrLn "digraph {"
+  mapM_
+    ( \(output, (fst, operator, snd)) -> do
+        putStrLn $ "\t" ++ fst ++ " -> " ++ output ++ ";"
+        putStrLn $ "\t" ++ snd ++ " -> " ++ output ++ ";"
+        putStrLn $ "\t" ++ output ++ " [label = \"" ++ show operator ++ "\"];"
+    )
+    gates
+  mapM_
+    ( \z -> do
+        putStrLn $ "\t" ++ z ++ " -> r" ++ z ++ ";"
+        putStrLn $ "\tr" ++ z ++ " [label = \"" ++ z ++ "\"];"
+    )
+    zs
+  putStrLn "}"
